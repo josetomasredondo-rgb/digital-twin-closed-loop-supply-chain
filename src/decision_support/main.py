@@ -1,6 +1,6 @@
 import random
-from tests.decision_support_simulator import ClosedLoopSimulator, get_scenarios
-from tests.decision_support_visualization import plot_scenario_comparison, print_summary_table
+from .simulator import ClosedLoopSimulator, get_scenarios
+from .visualization import plot_scenario_comparison, print_summary_table
 
 
 def main():

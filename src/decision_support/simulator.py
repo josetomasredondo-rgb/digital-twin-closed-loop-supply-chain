@@ -1,8 +1,10 @@
 import random
 import pandas as pd
-from tests.decision_support_constants import RAW_MATERIALS, FINAL_PRODUCTS
-from tests.decision_support_nodes import SupplierNode, FactoryNode, WarehouseNode, MarketNode
-from tests.decision_support_optimizer import SupplyChainOptimizer
+from .constants import RAW_MATERIALS, FINAL_PRODUCTS
+from .nodes import (SupplierNode, FactoryNode, WarehouseNode, MarketNode,
+                    CustomerNode, AirportNode, PortNode)
+from .transportation import DEFAULT_TRANSPORT_MODES
+from .optimizer import SupplyChainOptimizer
 
 
 class ClosedLoopSimulator:
@@ -10,10 +12,12 @@ class ClosedLoopSimulator:
         self.periods   = periods
         self.scenario  = scenario or {}
         self.optimizer = SupplyChainOptimizer()
+        self.transport_modes = DEFAULT_TRANSPORT_MODES.copy()
         self._build_nodes()
         self.records = []
 
     def _build_nodes(self):
+        # 3 Suppliers
         self.suppliers = [
             SupplierNode("Supplier_A",
                 inventory={"RM_1": 150}, capacity={"RM_1": 250},
@@ -21,49 +25,114 @@ class ClosedLoopSimulator:
             SupplierNode("Supplier_B",
                 inventory={"RM_2": 120}, capacity={"RM_2": 220},
                 restock_rate={"RM_2": 90}),
+            SupplierNode("Supplier_C",
+                inventory={"RM_1": 100, "RM_2": 80}, capacity={"RM_1": 200, "RM_2": 180},
+                restock_rate={"RM_1": 80, "RM_2": 70}),
         ]
 
+        # 3 Factories
         self.factories = [
             FactoryNode("Factory_1",
                 rm_inventory={"RM_1": 80,  "RM_2":  0},
-                fp_inventory={"FP_A": 30,  "FP_B":  0},
+                fp_inventory={"FP_A": 30,  "FP_B":  0, "FP_C": 0},
                 rm_capacity={"RM_1": 200, "RM_2":  0},
-                fp_capacity={"FP_A": 150, "FP_B":  0},
-                technology_ids=["TECH_P1", "TECH_R1"]),
+                fp_capacity={"FP_A": 150, "FP_B":  0, "FP_C": 120},
+                technology_ids=["TECH_P1", "TECH_P3", "TECH_R1", "TECH_R3"]),
             FactoryNode("Factory_2",
                 rm_inventory={"RM_1":  0,  "RM_2": 70},
-                fp_inventory={"FP_A":  0,  "FP_B": 25},
+                fp_inventory={"FP_A":  0,  "FP_B": 25, "FP_C": 0},
                 rm_capacity={"RM_1":  0,  "RM_2": 180},
-                fp_capacity={"FP_A":  0,  "FP_B": 130},
-                technology_ids=["TECH_P2", "TECH_R2"]),
+                fp_capacity={"FP_A":  0,  "FP_B": 130, "FP_C": 110},
+                technology_ids=["TECH_P2", "TECH_P3", "TECH_R2", "TECH_R3"]),
+            FactoryNode("Factory_3",
+                rm_inventory={"RM_1": 60,  "RM_2": 50},
+                fp_inventory={"FP_A": 20,  "FP_B": 15, "FP_C": 10},
+                rm_capacity={"RM_1": 180, "RM_2": 170},
+                fp_capacity={"FP_A": 140, "FP_B": 120, "FP_C": 100},
+                technology_ids=["TECH_P1", "TECH_P2", "TECH_P3", "TECH_R1", "TECH_R2", "TECH_R3"]),
         ]
 
+        # 5 Warehouses
         self.warehouses = [
             WarehouseNode("Warehouse_1",
-                inventory={"FP_A": 40, "FP_B": 30},
-                capacity={"FP_A": 150, "FP_B": 150}),
+                inventory={"FP_A": 40, "FP_B": 30, "FP_C": 25},
+                capacity={"FP_A": 150, "FP_B": 150, "FP_C": 140}),
             WarehouseNode("Warehouse_2",
-                inventory={"FP_A": 35, "FP_B": 25},
-                capacity={"FP_A": 130, "FP_B": 130}),
+                inventory={"FP_A": 35, "FP_B": 25, "FP_C": 20},
+                capacity={"FP_A": 130, "FP_B": 130, "FP_C": 120}),
             WarehouseNode("Warehouse_3",
-                inventory={"FP_A": 30, "FP_B": 20},
-                capacity={"FP_A": 120, "FP_B": 120}),
+                inventory={"FP_A": 30, "FP_B": 20, "FP_C": 15},
+                capacity={"FP_A": 120, "FP_B": 120, "FP_C": 110}),
+            WarehouseNode("Warehouse_4",
+                inventory={"FP_A": 25, "FP_B": 35, "FP_C": 30},
+                capacity={"FP_A": 140, "FP_B": 140, "FP_C": 130}),
+            WarehouseNode("Warehouse_5",
+                inventory={"FP_A": 28, "FP_B": 22, "FP_C": 18},
+                capacity={"FP_A": 125, "FP_B": 125, "FP_C": 115}),
         ]
 
-        self.markets = [
-            MarketNode("Market_A",
-                base_demand={"FP_A": 30, "FP_B": 25},
-                demand_std={"FP_A":  5, "FP_B":  4},
-                return_rate={"FP_A": 0.20, "FP_B": 0.18}),
-            MarketNode("Market_B",
-                base_demand={"FP_A": 25, "FP_B": 20},
-                demand_std={"FP_A":  4, "FP_B":  4},
-                return_rate={"FP_A": 0.22, "FP_B": 0.20}),
-            MarketNode("Market_C",
-                base_demand={"FP_A": 20, "FP_B": 18},
-                demand_std={"FP_A":  4, "FP_B":  3},
-                return_rate={"FP_A": 0.18, "FP_B": 0.15}),
+        # 6 Customers
+        self.customers = [
+            CustomerNode("Customer_1",
+                base_demand={"FP_A": 30, "FP_B": 25, "FP_C": 20},
+                demand_std={"FP_A":  5, "FP_B":  4, "FP_C":  3},
+                return_rate={"FP_A": 0.20, "FP_B": 0.18, "FP_C": 0.16}),
+            CustomerNode("Customer_2",
+                base_demand={"FP_A": 25, "FP_B": 20, "FP_C": 18},
+                demand_std={"FP_A":  4, "FP_B":  4, "FP_C":  3},
+                return_rate={"FP_A": 0.22, "FP_B": 0.20, "FP_C": 0.17}),
+            CustomerNode("Customer_3",
+                base_demand={"FP_A": 20, "FP_B": 18, "FP_C": 15},
+                demand_std={"FP_A":  4, "FP_B":  3, "FP_C":  3},
+                return_rate={"FP_A": 0.18, "FP_B": 0.15, "FP_C": 0.14}),
+            CustomerNode("Customer_4",
+                base_demand={"FP_A": 28, "FP_B": 22, "FP_C": 19},
+                demand_std={"FP_A":  5, "FP_B":  4, "FP_C":  4},
+                return_rate={"FP_A": 0.19, "FP_B": 0.17, "FP_C": 0.15}),
+            CustomerNode("Customer_5",
+                base_demand={"FP_A": 22, "FP_B": 18, "FP_C": 16},
+                demand_std={"FP_A":  4, "FP_B":  3, "FP_C":  3},
+                return_rate={"FP_A": 0.21, "FP_B": 0.19, "FP_C": 0.16}),
+            CustomerNode("Customer_6",
+                base_demand={"FP_A": 26, "FP_B": 24, "FP_C": 21},
+                demand_std={"FP_A":  5, "FP_B":  4, "FP_C":  4},
+                return_rate={"FP_A": 0.20, "FP_B": 0.18, "FP_C": 0.15}),
         ]
+
+        # 3 Airports
+        self.airports = [
+            AirportNode("Airport_North",
+                inventory={"FP_A": 20, "FP_B": 15, "FP_C": 12},
+                capacity={"FP_A": 100, "FP_B": 100, "FP_C": 90},
+                region="North"),
+            AirportNode("Airport_Central",
+                inventory={"FP_A": 15, "FP_B": 10, "FP_C": 8},
+                capacity={"FP_A": 80, "FP_B": 80, "FP_C": 70},
+                region="Central"),
+            AirportNode("Airport_South",
+                inventory={"FP_A": 18, "FP_B": 12, "FP_C": 10},
+                capacity={"FP_A": 90, "FP_B": 90, "FP_C": 80},
+                region="South"),
+        ]
+
+        # 3 Ports
+        self.ports = [
+            PortNode("Port_West",
+                inventory={"FP_A": 50, "FP_B": 40, "FP_C": 35},
+                capacity={"FP_A": 300, "FP_B": 300, "FP_C": 280},
+                region="West"),
+            PortNode("Port_East",
+                inventory={"FP_A": 45, "FP_B": 35, "FP_C": 30},
+                capacity={"FP_A": 280, "FP_B": 280, "FP_C": 260},
+                region="East"),
+            PortNode("Port_South",
+                inventory={"FP_A": 40, "FP_B": 30, "FP_C": 25},
+                capacity={"FP_A": 250, "FP_B": 250, "FP_C": 230},
+                region="South"),
+        ]
+
+        # Keep markets reference for backwards compatibility
+        self.markets = self.customers
 
     def _apply_disruption(self, t):
         s = self.scenario

@@ -15,9 +15,9 @@ Key features:
 """
 
 import random
-from data import FINAL_PRODUCTS, DISTANCE_TABLE
-from simulator import ClosedLoopSimulator
-from visualization import plot_results
+from .data import FINAL_PRODUCTS, DISTANCE_TABLE
+from .simulator import ClosedLoopSimulator
+from .visualization import plot_results
 
 
 # =============================================================

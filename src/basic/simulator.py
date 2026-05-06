@@ -3,8 +3,8 @@
 # =============================================================
 
 import pandas as pd
-from data import RAW_MATERIALS, FINAL_PRODUCTS
-from nodes import SupplierNode, FactoryNode, WarehouseNode, MarketNode
+from .data import RAW_MATERIALS, FINAL_PRODUCTS
+from .nodes import SupplierNode, FactoryNode, WarehouseNode, MarketNode
 
 
 class ClosedLoopSimulator:

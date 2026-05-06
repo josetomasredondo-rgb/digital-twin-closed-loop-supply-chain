@@ -1,5 +1,5 @@
 import pulp
-from tests.decision_support_constants import (
+from .constants import (
     DISTANCE_TABLE,
     FINAL_PRODUCTS,
     HOLDING_COST,

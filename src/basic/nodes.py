@@ -3,7 +3,7 @@
 # =============================================================
 
 import random
-from data import FINAL_PRODUCTS, TECHNOLOGIES
+from .data import FINAL_PRODUCTS, TECHNOLOGIES
 
 
 class SupplierNode:

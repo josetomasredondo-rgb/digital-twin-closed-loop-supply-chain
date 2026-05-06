@@ -5,7 +5,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import pandas as pd
-from data import FINAL_PRODUCTS
+from .data import FINAL_PRODUCTS
 
 
 def plot_results(df: pd.DataFrame):

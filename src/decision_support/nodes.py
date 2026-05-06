@@ -1,5 +1,5 @@
 import random
-from tests.decision_support_constants import FINAL_PRODUCTS, TECHNOLOGIES
+from .constants import FINAL_PRODUCTS, TECHNOLOGIES
 
 
 class SupplierNode:
@@ -122,3 +122,76 @@ class MarketNode:
             fp: received.get(fp, 0) * self.return_rate.get(fp, 0)
             for fp in FINAL_PRODUCTS
         }
+
+
+class CustomerNode:
+    """Represents a customer/market location with demand and returns."""
+    
+    def __init__(self, name, base_demand, demand_std, return_rate,
+                 demand_multiplier=1.0):
+        self.name              = name
+        self.base_demand       = base_demand.copy()
+        self.demand_std        = demand_std.copy()
+        self.return_rate       = return_rate.copy()
+        self.demand_multiplier = demand_multiplier
+
+    def generate_demand(self):
+        return {
+            fp: max(0.0, random.gauss(
+                self.base_demand.get(fp, 0) * self.demand_multiplier,
+                self.demand_std.get(fp, 0)
+            ))
+            for fp in FINAL_PRODUCTS
+        }
+
+    def generate_returns(self, received):
+        return {
+            fp: received.get(fp, 0) * self.return_rate.get(fp, 0)
+            for fp in FINAL_PRODUCTS
+        }
+
+
+class AirportNode:
+    """Represents an airport hub for air transportation."""
+    
+    def __init__(self, name, inventory, capacity, region=""):
+        self.name      = name
+        self.inventory = inventory.copy()
+        self.capacity  = capacity.copy()
+        self.region    = region
+        self.active    = True
+
+    def receive(self, fp_type, quantity):
+        space    = self.capacity.get(fp_type, 0) - self.inventory.get(fp_type, 0)
+        received = min(max(0.0, quantity), space)
+        self.inventory[fp_type] = self.inventory.get(fp_type, 0) + received
+        return received
+
+    def ship(self, fp_type, quantity):
+        available = self.inventory.get(fp_type, 0)
+        shipped   = min(max(0.0, quantity), available)
+        self.inventory[fp_type] = available - shipped
+        return shipped
+
+
+class PortNode:
+    """Represents a port hub for sea transportation."""
+    
+    def __init__(self, name, inventory, capacity, region=""):
+        self.name      = name
+        self.inventory = inventory.copy()
+        self.capacity  = capacity.copy()
+        self.region    = region
+        self.active    = True
+
+    def receive(self, fp_type, quantity):
+        space    = self.capacity.get(fp_type, 0) - self.inventory.get(fp_type, 0)
+        received = min(max(0.0, quantity), space)
+        self.inventory[fp_type] = self.inventory.get(fp_type, 0) + received
+        return received
+
+    def ship(self, fp_type, quantity):
+        available = self.inventory.get(fp_type, 0)
+        shipped   = min(max(0.0, quantity), available)
+        self.inventory[fp_type] = available - shipped
+        return shipped
