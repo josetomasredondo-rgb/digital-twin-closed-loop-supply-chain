@@ -1,13 +1,14 @@
 import random
-from .constants import FINAL_PRODUCTS, TECHNOLOGIES
+from .constants import FINAL_PRODUCTS, RECOVERED_PRODUCTS, TECHNOLOGIES
 
 
 class SupplierNode:
     def __init__(self, name, inventory, capacity, restock_rate):
-        self.name         = name
-        self.inventory    = inventory.copy()
-        self.capacity     = capacity.copy()
-        self.restock_rate = restock_rate.copy()
+        self.name               = name
+        self.inventory          = inventory.copy()
+        self.capacity           = capacity.copy()
+        self.restock_rate       = restock_rate.copy()
+        self._base_restock_rate = restock_rate.copy()
 
     def restock(self):
         for rm in self.inventory:
@@ -22,17 +23,26 @@ class SupplierNode:
         self.inventory[rm_type] = available - shipped
         return shipped
 
+    def disrupt(self):
+        self.restock_rate = {rm: 0 for rm in self.restock_rate}
+
+    def restore(self):
+        self.restock_rate = self._base_restock_rate.copy()
+
 
 class FactoryNode:
     def __init__(self, name, rm_inventory, fp_inventory,
-                 rm_capacity, fp_capacity, technology_ids):
+                 rm_capacity, fp_capacity, technology_ids,
+                 employees=0, region=""):
         self.name         = name
         self.rm_inventory = rm_inventory.copy()
         self.fp_inventory = fp_inventory.copy()
         self.rm_capacity  = rm_capacity.copy()
         self.fp_capacity  = fp_capacity.copy()
         self.technologies = {tid: TECHNOLOGIES[tid] for tid in technology_ids}
-        self.rp_inventory = {fp: 0.0 for fp in FINAL_PRODUCTS}
+        self.rp_inventory = {rp: 0.0 for rp in RECOVERED_PRODUCTS}
+        self.employees    = employees
+        self.region       = region
         self.active       = True
 
     def receive_rm(self, rm_type, quantity):
@@ -49,24 +59,25 @@ class FactoryNode:
     def produce(self, tech_id, quantity):
         if not self.active or tech_id not in self.technologies:
             return 0.0
-        tech      = self.technologies[tech_id]
-        quantity  = max(0.0, quantity)
-        fp_space  = self.fp_capacity.get(tech["output"], 0) - self.fp_inventory.get(tech["output"], 0)
+        tech     = self.technologies[tech_id]
+        quantity = max(0.0, quantity)
+        fp_space = self.fp_capacity.get(tech["output"], 0) - self.fp_inventory.get(tech["output"], 0)
         if tech["type"] == "production":
-            rm_avail  = self.rm_inventory.get(tech["input"], 0)
-            max_out   = min(quantity,
-                            rm_avail / tech["input_rate"],
-                            tech["capacity"],
-                            fp_space)
-            output    = max(0.0, max_out)
-            self.rm_inventory[tech["input"]]  -= output * tech["input_rate"]
+            # All raw materials are consumed simultaneously; most constrained RM limits output
+            max_out = min(quantity, tech["capacity"], fp_space)
+            for rm, rate in tech["inputs"].items():
+                if rate > 0:
+                    max_out = min(max_out, self.rm_inventory.get(rm, 0.0) / rate)
+            output = max(0.0, max_out)
+            for rm, rate in tech["inputs"].items():
+                self.rm_inventory[rm] = self.rm_inventory.get(rm, 0.0) - output * rate
         else:
-            rp_avail  = self.rp_inventory.get(tech["input"], 0)
-            max_out   = min(quantity,
-                            rp_avail / tech["input_rate"],
-                            tech["capacity"],
-                            fp_space)
-            output    = max(0.0, max_out)
+            rp_avail = self.rp_inventory.get(tech["input"], 0)
+            max_out  = min(quantity,
+                           rp_avail / tech["input_rate"],
+                           tech["capacity"],
+                           fp_space)
+            output   = max(0.0, max_out)
             self.rp_inventory[tech["input"]] -= output * tech["input_rate"]
         self.fp_inventory[tech["output"]] = self.fp_inventory.get(tech["output"], 0) + output
         return output
@@ -79,12 +90,20 @@ class FactoryNode:
         self.fp_inventory[fp_type] = available - shipped
         return shipped
 
+    def disrupt(self):
+        self.active = False
+
+    def restore(self):
+        self.active = True
+
 
 class WarehouseNode:
-    def __init__(self, name, inventory, capacity):
+    def __init__(self, name, inventory, capacity, employees=0, region=""):
         self.name      = name
         self.inventory = inventory.copy()
         self.capacity  = capacity.copy()
+        self.employees = employees
+        self.region    = region
 
     def receive(self, fp_type, quantity):
         space    = self.capacity.get(fp_type, 0) - self.inventory.get(fp_type, 0)
@@ -102,11 +121,13 @@ class WarehouseNode:
 class MarketNode:
     def __init__(self, name, base_demand, demand_std, return_rate,
                  demand_multiplier=1.0):
-        self.name              = name
-        self.base_demand       = base_demand.copy()
-        self.demand_std        = demand_std.copy()
-        self.return_rate       = return_rate.copy()
-        self.demand_multiplier = demand_multiplier
+        self.name                    = name
+        self.base_demand             = base_demand.copy()
+        self.demand_std              = demand_std.copy()
+        self.return_rate             = return_rate.copy()
+        self._base_return_rate       = return_rate.copy()
+        self.demand_multiplier       = demand_multiplier
+        self._base_demand_multiplier = demand_multiplier
 
     def generate_demand(self):
         return {
@@ -118,80 +139,19 @@ class MarketNode:
         }
 
     def generate_returns(self, received):
+        # fp delivered → rp returned: fp1→rp1, fp2→rp2, fp3→rp3
         return {
-            fp: received.get(fp, 0) * self.return_rate.get(fp, 0)
-            for fp in FINAL_PRODUCTS
+            rp: received.get(fp, 0) * self.return_rate.get(fp, 0)
+            for fp, rp in zip(FINAL_PRODUCTS, RECOVERED_PRODUCTS)
         }
 
+    def disrupt(self, demand_multiplier=None, return_rate_factor=None):
+        if demand_multiplier is not None:
+            self.demand_multiplier = demand_multiplier
+        if return_rate_factor is not None:
+            self.return_rate = {fp: r * return_rate_factor
+                                for fp, r in self._base_return_rate.items()}
 
-class CustomerNode:
-    """Represents a customer/market location with demand and returns."""
-    
-    def __init__(self, name, base_demand, demand_std, return_rate,
-                 demand_multiplier=1.0):
-        self.name              = name
-        self.base_demand       = base_demand.copy()
-        self.demand_std        = demand_std.copy()
-        self.return_rate       = return_rate.copy()
-        self.demand_multiplier = demand_multiplier
-
-    def generate_demand(self):
-        return {
-            fp: max(0.0, random.gauss(
-                self.base_demand.get(fp, 0) * self.demand_multiplier,
-                self.demand_std.get(fp, 0)
-            ))
-            for fp in FINAL_PRODUCTS
-        }
-
-    def generate_returns(self, received):
-        return {
-            fp: received.get(fp, 0) * self.return_rate.get(fp, 0)
-            for fp in FINAL_PRODUCTS
-        }
-
-
-class AirportNode:
-    """Represents an airport hub for air transportation."""
-    
-    def __init__(self, name, inventory, capacity, region=""):
-        self.name      = name
-        self.inventory = inventory.copy()
-        self.capacity  = capacity.copy()
-        self.region    = region
-        self.active    = True
-
-    def receive(self, fp_type, quantity):
-        space    = self.capacity.get(fp_type, 0) - self.inventory.get(fp_type, 0)
-        received = min(max(0.0, quantity), space)
-        self.inventory[fp_type] = self.inventory.get(fp_type, 0) + received
-        return received
-
-    def ship(self, fp_type, quantity):
-        available = self.inventory.get(fp_type, 0)
-        shipped   = min(max(0.0, quantity), available)
-        self.inventory[fp_type] = available - shipped
-        return shipped
-
-
-class PortNode:
-    """Represents a port hub for sea transportation."""
-    
-    def __init__(self, name, inventory, capacity, region=""):
-        self.name      = name
-        self.inventory = inventory.copy()
-        self.capacity  = capacity.copy()
-        self.region    = region
-        self.active    = True
-
-    def receive(self, fp_type, quantity):
-        space    = self.capacity.get(fp_type, 0) - self.inventory.get(fp_type, 0)
-        received = min(max(0.0, quantity), space)
-        self.inventory[fp_type] = self.inventory.get(fp_type, 0) + received
-        return received
-
-    def ship(self, fp_type, quantity):
-        available = self.inventory.get(fp_type, 0)
-        shipped   = min(max(0.0, quantity), available)
-        self.inventory[fp_type] = available - shipped
-        return shipped
+    def restore(self):
+        self.demand_multiplier = self._base_demand_multiplier
+        self.return_rate       = self._base_return_rate.copy()

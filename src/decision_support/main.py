@@ -1,25 +1,64 @@
 import random
 from .simulator import ClosedLoopSimulator, get_scenarios
-from .visualization import plot_scenario_comparison, print_summary_table
+from .strategies import STRATEGIES_BY_DISRUPTION
+from .visualization import print_strategy_comparison, plot_strategy_comparison
+
+
+# Disruption-type key for each scenario name (partial match)
+_SCENARIO_TYPE = {
+    "Supplier Failure":     "supplier_failure",
+    "Demand Spike":         "demand_spike",
+    "Factory 1 Downtime":   "factory_downtime",
+    "Return Rate Drop":     "return_rate_drop",
+}
+
+
+def _disruption_key(scenario_name):
+    for prefix, key in _SCENARIO_TYPE.items():
+        if scenario_name.startswith(prefix):
+            return key
+    return None
 
 
 def main():
-    random.seed(42)
     PERIODS = 24
+    scenarios = get_scenarios()
 
-    _tmp_sim = ClosedLoopSimulator(periods=1)
-    scenarios = get_scenarios(_tmp_sim.markets)
+    # results: {scenario_name: {"Baseline LP Plan": df, strategy_name: df, ...}}
+    all_results = {}
 
-    scenario_results = {}
     for scenario in scenarios:
-        random.seed(42)
-        sim = ClosedLoopSimulator(periods=PERIODS, scenario=scenario)
-        df = sim.run()
-        scenario_results[scenario["name"]] = df
-        df.to_csv(f"results_{scenario['name'].replace(' ', '_')[:30]}.csv", index=False)
+        sname = scenario["name"]
+        print(f"\n{'='*70}")
+        print(f"SCENARIO: {sname}")
+        print(f"{'='*70}")
 
-    print_summary_table(scenario_results)
-    plot_scenario_comparison(scenario_results)
+        strategy_dfs = {}
+
+        # Always run baseline (no strategy)
+        random.seed(42)
+        sim = ClosedLoopSimulator(periods=PERIODS, scenario=scenario, strategy=None)
+        df  = sim.run()
+        strategy_dfs["Baseline LP Plan"] = df
+
+        # Run each recovery strategy for disruption scenarios
+        dkey = _disruption_key(sname)
+        if dkey and dkey in STRATEGIES_BY_DISRUPTION:
+            for strat in STRATEGIES_BY_DISRUPTION[dkey]:
+                random.seed(42)
+                sim = ClosedLoopSimulator(periods=PERIODS, scenario=scenario, strategy=strat)
+                df  = sim.run()
+                strategy_dfs[strat.name] = df
+
+        all_results[sname] = strategy_dfs
+        print_strategy_comparison(sname, strategy_dfs)
+
+        safe_name = sname.replace(" ", "_").replace("/", "-")[:40]
+        for strat_label, df in strategy_dfs.items():
+            safe_strat = strat_label.replace(" ", "_").replace("/", "-")[:30]
+            df.to_csv(f"results_{safe_name}__{safe_strat}.csv", index=False)
+
+    plot_strategy_comparison(all_results)
 
 
 if __name__ == "__main__":

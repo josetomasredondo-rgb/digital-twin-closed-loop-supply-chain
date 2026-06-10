@@ -6,6 +6,7 @@ from .constants import (
     PRODUCTION_COST,
     PRODUCTION_EMISSIONS,
     RAW_MATERIALS,
+    RECOVERED_PRODUCTS,
     TRANSPORT_COST_PER_KM,
     TRANSPORT_EMISSIONS_PER_KM,
     UNMET_PENALTY,
@@ -66,22 +67,22 @@ class SupplyChainOptimizer:
                 continue
             for rm in RAW_MATERIALS:
                 rm_used = pulp.lpSum(
-                    prod[(f.name, tid)] * tech["input_rate"]
+                    prod[(f.name, tid)] * tech["inputs"].get(rm, 0)
                     for tid, tech in f.technologies.items()
-                    if tech["type"] == "production" and tech["input"] == rm
+                    if tech["type"] == "production"
                 )
                 prob += rm_used <= f.rm_inventory.get(rm, 0), f"rm_{f.name}_{rm}"
 
         for f in factories:
             if not f.active:
                 continue
-            for fp in FINAL_PRODUCTS:
+            for rp in RECOVERED_PRODUCTS:
                 rp_used = pulp.lpSum(
                     prod[(f.name, tid)] * tech["input_rate"]
                     for tid, tech in f.technologies.items()
-                    if tech["type"] == "remanufacturing" and tech["input"] == fp
+                    if tech["type"] == "remanufacturing" and tech["input"] == rp
                 )
-                prob += rp_used <= f.rp_inventory.get(fp, 0), f"rp_{f.name}_{fp}"
+                prob += rp_used <= f.rp_inventory.get(rp, 0), f"rp_{f.name}_{rp}"
 
         for f in factories:
             if not f.active:

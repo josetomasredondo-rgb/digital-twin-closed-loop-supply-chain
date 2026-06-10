@@ -1,59 +1,74 @@
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-from .constants import FINAL_PRODUCTS
+
+def print_strategy_comparison(scenario_name, strategy_dfs):
+    """Print a TBL comparison table for all strategies within one scenario."""
+    col_w = 32
+    print(f"\n{'='*110}")
+    print(f"  {scenario_name}")
+    print(f"{'='*110}")
+    print(
+        f"  {'Strategy':<{col_w}} {'Service Level':>14} {'Total Cost €':>14} "
+        f"{'Emissions kg':>14} {'Social Impact':>14} {'Unmet fp1':>10} {'Unmet fp2':>10} {'Unmet fp3':>10}"
+    )
+    print(f"  {'-'*col_w} {'-'*14} {'-'*14} {'-'*14} {'-'*14} {'-'*10} {'-'*10} {'-'*10}")
+
+    for label, df in strategy_dfs.items():
+        avg_sl     = df["service_level"].mean()
+        total_cost = df["total_cost"].sum()
+        total_emi  = df["total_emissions"].sum()
+        avg_social = df["social_impact"].mean()
+        unmet1     = df["unmet_fp1"].sum()
+        unmet2     = df["unmet_fp2"].sum()
+        unmet3     = df["unmet_fp3"].sum()
+        print(
+            f"  {label:<{col_w}} {avg_sl:>13.1f}% {total_cost:>14.1f} "
+            f"{total_emi:>14.1f} {avg_social:>14.0f} "
+            f"{unmet1:>10.1f} {unmet2:>10.1f} {unmet3:>10.1f}"
+        )
+
+    print(f"{'='*110}")
 
 
-def plot_scenario_comparison(scenario_results):
-    fig, axes = plt.subplots(3, 3, figsize=(18, 15))
-    fig.suptitle("Scenario Comparison — Decision Support System",
-                 fontsize=14, fontweight="bold")
+def plot_strategy_comparison(all_results):
+    """
+    all_results: {scenario_name: {strategy_label: df}}
 
-    colors = ["#1565C0", "#C62828", "#2E7D32", "#F57F17", "#6A1B9A"]
+    Produces one figure per disruption scenario (skips Baseline-only).
+    Each figure shows 4 TBL metrics over time for each strategy.
+    Saves as PNG.
+    """
     metrics = [
-        ("unmet_FP_A",    "Unmet Demand — FP_A",    "Units"),
-        ("unmet_FP_B",    "Unmet Demand — FP_B",    "Units"),
-        ("unmet_FP_C",    "Unmet Demand — FP_C",    "Units"),
-        ("opt_cost",      "Total Cost (€)",          "€"),
-        ("opt_emissions", "Total Emissions (kg CO₂)","kg CO₂"),
-        ("warehouse_inv", "Warehouse Inventory",     "Units"),
-        ("remanufactured_FP_A", "Remanufactured FP_A", "Units"),
-        ("remanufactured_FP_B", "Remanufactured FP_B", "Units"),
-        ("remanufactured_FP_C", "Remanufactured FP_C", "Units"),
+        ("service_level",   "Service Level (%)",       "%"),
+        ("total_cost",      "Total Cost (€)",           "€"),
+        ("total_emissions", "Total Emissions (kg CO₂)", "kg CO₂"),
+        ("social_impact",   "Social Impact (€)",        "€"),
     ]
+    colors = ["#1565C0", "#C62828", "#2E7D32", "#F57F17", "#6A1B9A"]
 
-    for ax, (metric, title, ylabel) in zip(axes.flat, metrics):
-        for i, (name, df) in enumerate(scenario_results.items()):
-            ax.plot(df["period"], df[metric],
-                    label=name, color=colors[i % len(colors)],
-                    linewidth=2, marker="o", markersize=3)
-        ax.set_title(title, fontsize=10)
-        ax.set_xlabel("Period")
-        ax.set_ylabel(ylabel)
-        ax.legend(fontsize=6)
-        ax.grid(True, alpha=0.3)
+    for scenario_name, strategy_dfs in all_results.items():
+        if len(strategy_dfs) <= 1:
+            continue  # nothing to compare
 
-    plt.tight_layout()
-    plt.savefig("scenario_comparison.png", dpi=150, bbox_inches="tight")
-    print("Scenario comparison saved to: scenario_comparison.png")
-    # Don't show the plot in interactive mode to avoid blocking
-    # plt.show()  # Commented out to prevent blocking in script execution
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        fig.suptitle(f"Strategy Comparison — {scenario_name}",
+                     fontsize=13, fontweight="bold")
 
+        for ax, (metric, title, ylabel) in zip(axes.flat, metrics):
+            for i, (label, df) in enumerate(strategy_dfs.items()):
+                ax.plot(df["period"], df[metric],
+                        label=label, color=colors[i % len(colors)],
+                        linewidth=2, marker="o", markersize=3)
+            ax.set_title(title, fontsize=10)
+            ax.set_xlabel("Period")
+            ax.set_ylabel(ylabel)
+            ax.legend(fontsize=7)
+            ax.grid(True, alpha=0.3)
 
-def print_summary_table(scenario_results):
-    print("\n" + "="*110)
-    print(f"{'SCENARIO SUMMARY':^110}")
-    print("="*110)
-    print(f"{'Scenario':<40} {'Unmet FP_A':>10} {'Unmet FP_B':>10} {'Unmet FP_C':>10} "
-          f"{'Total Cost €':>13} {'Emissions kg':>13} {'Avg SL%':>8}")
-    print("-"*110)
-    for name, df in scenario_results.items():
-        sl = ((df["shipped_FP_A"] + df["shipped_FP_B"] + df["shipped_FP_C"]) /
-              (df["demand_FP_A"]  + df["demand_FP_B"]  + df["demand_FP_C"]) * 100).mean()
-        print(f"  {name:<38} {df['unmet_FP_A'].sum():>10.1f} "
-              f"{df['unmet_FP_B'].sum():>10.1f} "
-              f"{df['unmet_FP_C'].sum():>10.1f} "
-              f"{df['opt_cost'].sum():>13.1f} "
-              f"{df['opt_emissions'].sum():>13.1f} "
-              f"{sl:>7.1f}%")
-    print("="*110)
+        plt.tight_layout()
+        safe = scenario_name.replace(" ", "_").replace("/", "-")[:50]
+        fname = f"strategy_comparison_{safe}.png"
+        plt.savefig(fname, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Chart saved: {fname}")
